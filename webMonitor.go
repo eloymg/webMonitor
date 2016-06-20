@@ -81,6 +81,8 @@ func main() {
 
 	content4, err := ioutil.ReadFile("signatures")
 	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	patr := strings.Split(string(content4), "\r\n")
 
