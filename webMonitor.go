@@ -11,7 +11,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"net/smtp"
 	"os"
 	"strings"
 	"time"
