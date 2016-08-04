@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
@@ -11,15 +12,15 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/smtp"
 	"os"
-	"strings"
 	"time"
 )
 
-var seconds = flag.Int("s", 600, "Define max loop time (s)")
-var reset = flag.Bool("r", false, "Set true to reset signatures")
+var seconds = flag.Int("s", 600, "Define max loop seconds")
+var reset = flag.Bool("r", false, "Set true to reset signs")
 var dom_list = flag.String("f", "", "Define list of urls")
-var patr_list = flag.String("p", "", "Define list of patterns")
+var patr_list = flag.String("p", "", "Define list of patrons")
 var useragent_list = flag.String("a", "", "Define list of user agents")
 
 func main() {
@@ -27,18 +28,18 @@ func main() {
 	flag.Parse()
 
 	if *dom_list == "" {
-		fmt.Print("Define a domain list path with flag -f")
+		fmt.Println("Define a domain list path with flag -f")
 		os.Exit(1)
 	}
 	if *patr_list == "" {
-		fmt.Print("Define a pattern list path with flag -p")
+		fmt.Println("Define a pattern list path with flag -p")
 		os.Exit(1)
 	}
 	if *seconds == 600 {
-		fmt.Print("Using default max loop time {", *seconds, "s}\nUse -s for define custom max loop time (s)\n")
+		fmt.Println("Using default max loop seconds {", *seconds, "}\nUse -s for define custom max bucle seconds\n")
 	}
 	if *seconds == 0 {
-		*seconds = *seconds + 1
+		*seconds = *seconds + 5
 	}
 	if *reset {
 		os.Remove("signatures")
@@ -54,42 +55,43 @@ func main() {
 		fmt.Println("Using default list of user agents (use -a for define a list)")
 
 	} else {
-		content2, err := ioutil.ReadFile(*useragent_list)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		array_useragents = strings.Split(string(content2), "\r\n")
+
+		array_useragents = filetoarray(*useragent_list)
 
 	}
 
-	content, err := ioutil.ReadFile(*dom_list)
+	array_dominios := filetoarray(*dom_list)
+	array_patrones := filetoarray(*patr_list)
+
+	f, err := os.OpenFile("signatures", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Println(err)
 	}
+	f.Close()
+	patr := filetoarray("signatures")
 
-	array_dominios := strings.Split(string(content), "\r\n")
-
-	content3, err := ioutil.ReadFile(*patr_list)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	array_patrones := strings.Split(string(content3), "\r\n")
-
-	content4, err := ioutil.ReadFile("signatures")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	patr := strings.Split(string(content4), "\r\n")
-
+	
 	fmt.Println()
-	log.Println("Max loop time (s):", *seconds)
+	log.Println("Max loop seconds:", *seconds)
 	for {
 		patr = get(array_dominios, array_useragents, array_patrones, patr, *seconds)
 	}
+}
+func sendMail(dominio string, patron string) {
+
+	auth := smtp.PlainAuth("", "XXXX", "XXXX", "XXXX")
+
+	to := []string{"XXXX"}
+	msg := []byte("To: XXXXXX\r\n" +
+		"Subject: alert domain\r\n" +
+		"\r\n" +
+		"Alert " + dominio + "\r\n" +
+		"Patron " + patron + "\r\n")
+	err := smtp.SendMail("XXXXX", auth, "XXXXXXXX", to, msg)
+	if err != nil {
+		log.Println(err)
+	}
+
 }
 
 func get(array_dominios []string, array_useragents []string, array_patrones []string, patr []string, seconds int) []string {
@@ -100,90 +102,125 @@ func get(array_dominios []string, array_useragents []string, array_patrones []st
 	if err != nil {
 		log.Println(err)
 	}
-	f2, err := os.OpenFile("alerts.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-	if err != nil {
-		log.Println(err)
-	}
-
+	
+	defer time.Sleep(d * time.Second)
+	
 	for i := range array_dominios {
+		if array_dominios[i] != "" {
+			rand.Seed(time.Now().Unix())
+			intuser := (rand.Intn(len(array_useragents)))
 
-		rand.Seed(time.Now().Unix())
-		intuser := (rand.Intn(len(array_useragents)))
+			client := &http.Client{}
 
-		client := &http.Client{}
+			req, err := http.NewRequest("GET", array_dominios[i], nil)
 
-		req, err := http.NewRequest("GET", array_dominios[i], nil)
+			if err != nil {
+				log.Println("PING_FAIL", array_dominios[i], err)
+				return patr
+			}
+			log.Println("PING", array_dominios[i], array_useragents[intuser], d*time.Second)
+			req.Header.Add("User-Agent", array_useragents[intuser])
 
-		if err != nil {
-			log.Println("PING_FAIL", array_dominios[i])
-			return patr
-		}
-		log.Println("PING", array_dominios[i], array_useragents[intuser], d*time.Second)
-		req.Header.Add("User-Agent", array_useragents[intuser])
+			resp, err := client.Do(req)
 
-		resp, err := client.Do(req)
+			if err != nil {
+				log.Println("PING_FAIL", array_dominios[i], " ", err)
+				return patr
+			}
 
-		if err != nil {
-			log.Println("PING_FAIL", array_dominios[i])
-			return patr
-		}
+			body, err := ioutil.ReadAll(resp.Body)
 
-		body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Println("PING_FAIL", array_dominios[i], " ", err)
+				return patr
+			}
 
-		if err != nil {
-			log.Println("PING_FAIL", array_dominios[i])
-			return patr
-		}
+			
 
-		for key := range array_patrones {
-			alert := false
-			index := suffixarray.New(bytes.ToLower(body))
-			ind := index.Lookup(bytes.ToLower([]byte(array_patrones[key])), -1)
-			if len(ind) > 0 {
-				for shots := range ind {
-					if len(patr) == 0 {
-						sign := sign_catcher(body, ind[shots])
-						patr = append(patr, hex.EncodeToString(sign[:]))
-						if _, err = f.WriteString(hex.EncodeToString(sign[:]) + "\r\n"); err != nil {
-							log.Println(err)
+			for key := range array_patrones {
+				alert := false
+				body = bytes.ToLower(body)
+				index := suffixarray.New(body)
+				ind := index.Lookup(bytes.ToLower([]byte(array_patrones[key])), -1)
+				
+				if len(ind) > 0 {
+					for shots := range ind {
+						if len(patr) == 0 {
+							sign := sign_catcher(body, ind[shots])
+							patr = append(patr, hex.EncodeToString(sign[:]))
+							
+							if _, err = f.WriteString(hex.EncodeToString(sign[:]) + "\n"); err != nil {
+								log.Println(err)
+							}
+							
+							alert = true
 						}
-						alert = true
-					}
-					tes := false
-					for key2 := range patr {
+						tes := false
+						
 						sign := sign_catcher(body, ind[shots])
-						if hex.EncodeToString(sign[:]) == patr[key2] {
-							tes = true
+
+						
+							for key2 := range patr {
+
+								if hex.EncodeToString(sign[:]) == patr[key2] {
+									tes = true
+								}
+							
 						}
-					}
-					if tes == false {
-						sign := sign_catcher(body, ind[shots])
-						patr = append(patr, hex.EncodeToString(sign[:]))
-						if _, err = f.WriteString(hex.EncodeToString(sign[:]) + "\r\n"); err != nil {
-							log.Println(err)
+						if tes == false {
+							sign := sign_catcher(body, ind[shots])
+							patr = append(patr, hex.EncodeToString(sign[:]))
+							if _, err = f.WriteString(hex.EncodeToString(sign[:]) + "\n"); err != nil {
+								log.Println(err)
+							}
+							alert = true
 						}
-						alert = true
 					}
 				}
-			}
-			if alert == true {
-				logs := "ALERT " + array_dominios[i] + " " + array_patrones[key]
-				log.Println(logs)
-
-				if _, err = f2.WriteString(time.Now().Format(time.RFC3339) + " " + logs + "\r\n"); err != nil {
-					log.Println(err)
+				if alert == true {
+					logs := "ALERT " + array_dominios[i] + " '" + array_patrones[key] + "'"
+					log.Println(logs)
+					f2, err := os.OpenFile("alerts.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+					if err != nil {
+						log.Println(err)
+					}
+					if _, err = f2.WriteString(time.Now().Format(time.RFC3339) + " " + logs + "\r\n"); err != nil {
+						log.Println(err)
+					}
+					f2.Close()
+					sendMail(array_dominios[i], array_patrones[key])
 				}
-
 			}
 		}
-
 	}
-	time.Sleep(d * time.Second)
+
 	return patr
 
 }
 
+func filetoarray(path string) []string {
+
+	str := []string{}
+	if file, err := os.Open(path); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			str = append(str, scanner.Text())
+		}
+		if err = scanner.Err(); err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
+	} else {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	return str
+}
+
 func sign_catcher(str []byte, index int) [16]byte {
+	
 
 	i := 0
 	j := 0
@@ -192,29 +229,34 @@ func sign_catcher(str []byte, index int) [16]byte {
 	catchinf := 0
 	catchsup := 0
 	for {
-
+		
 		if str[index-i] == b1 || str[index-i] == b2 {
 			catchinf = index - i
 			break
 		}
 		i++
-		if index-i < 0 {
+		if index-i <= 0 {
 			catchinf = 0
 			break
 		}
+		
 	}
 
 	for {
+		
 		if str[index+j] == b1 || str[index+j] == b2 {
 			catchsup = index + j
 			break
 		}
 		j++
-		if index+j > len(str) {
+		if index+j >= len(str) {
 			catchsup = len(str)
 			break
 		}
+		
 	}
 
+	
+	
 	return md5.Sum(str[catchinf+1 : catchsup])
 }
