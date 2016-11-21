@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/eloymg/webMonitor/hit"
 	"flag"
 	"fmt"
+	"github.com/eloymg/webMonitor/hit"
 	"os"
 )
 
@@ -13,11 +13,10 @@ var DomainList = flag.String("f", "", "Define list of urls")
 var PatternList = flag.String("p", "", "Define list of patterns")
 var UserAgentList = flag.String("a", "", "Define list of user agents")
 
-
 func main() {
 
 	flag.Parse()
-	
+
 	h := hit.Hit{}
 
 	h.Config.DomainList = *DomainList
@@ -46,15 +45,4 @@ func main() {
 	h.Start()
 	h.GoHits()
 
-	
 }
-
-
-
-
-
-
-
-
-
-
