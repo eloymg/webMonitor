@@ -256,8 +256,3 @@ func sign_catcher(str []byte, index int) [16]byte {
 
 	return md5.Sum(str[catchinf+1 : catchsup])
 }
-
-func NewHit() *Hit {
-	s := &Hit{}
-	return s
-}
