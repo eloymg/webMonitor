@@ -1,0 +1,5 @@
+language: go
+dist: trusty
+
+install:
+  - go get github.com/eloymg/webMonitor
